@@ -1,13 +1,9 @@
-FROM python:2.7.10
-MAINTAINER "Yoanis Gil <gil.yoanis@gmail.com>"
+FROM python:2.7.12
 
 ADD requirements.txt /
 
 RUN apt-get update && \
-    apt-get install -y python-dev && \
-    pip install --no-cache-dir -r requirements.txt && \
-    apt-get autoremove -y python-dev && \
-    rm -rf /var/lib/apt/lists/*
+    pip install -r requirements.txt
 
 ADD . /src/app
 

@@ -7,9 +7,9 @@ import time
 import json
 import os
 
-statsd = TCPStatsClient(host=os.environ.get('STATSD_HOST', '192.168.59.103'), 
+statsd = StatsClient(host=os.environ.get('STATSD_HOST', 'statsd'),
                      port=os.environ.get('STATSD_PORT', 8125), 
-                     prefix=os.environ.get('STATSD_PREFIX', 'locust')) 
+                     prefix=os.environ.get('STATSD_PREFIX', 'locust'))
 
 
 def post_with_retries(session, url, payload, headers):
@@ -33,7 +33,7 @@ def post_with_retries(session, url, payload, headers):
     
 
 def init_influxdb_():
-    influxdb_url = os.environ.get('INFLUXDB_HOST', 'http://192.168.59.103:8086')
+    influxdb_url = os.environ.get('INFLUXDB_HOST', 'influxdb:8083')
 
     session = requests.Session()
 
@@ -54,7 +54,7 @@ def init_influxdb_():
         post_with_retries(session, post_url, payload, {'Content-Type': 'application/json'})
 
 def init_grafana_dashboard():
-   grafana_url = os.environ.get('GRAFANA_URL', 'http://192.168.59.103:3000')
+   grafana_url = os.environ.get('GRAFANA_URL', 'grafana:3000')
 
    grafana_user = os.environ.get('GRAFANA_USER', 'admin')
    grafana_password = os.environ.get('GRAFANA_PASSWORD', 'admin')
@@ -72,12 +72,12 @@ def init_grafana_dashboard():
    if 'logged in' == data['message'].lower():
        # Create data source
        payload = {"access": "direct", 
-                   "database": "statsd" ,
+                   "database": "statsd",
                    "isDefault": True,
                    "name": "statsd",
                    "password": "root",
                    "type": "influxdb_08",
-                   "url": os.environ.get('INFLUXDB_HOST', "http://192.168.59.103:8086"),
+                   "url": os.environ.get('INFLUXDB_HOST', "influxdb:8083"),
                    "user": "root"
                  } 
 
@@ -86,21 +86,44 @@ def init_grafana_dashboard():
 
        dashboard_json = open('dashboard.json').read()
        response = session.post('%s/api/dashboards/db/' % grafana_url, data=dashboard_json, headers=headers)
-       print  response.json()
+       print response.json()
 
 init_influxdb_()
 init_grafana_dashboard()
 
-class UserBehavior(TaskSet):
-    @task(2)
-    def index(self):
-        with statsd.timer('request_time'):
-            response = self.client.get("/")
-            statsd.incr('requests_%s' % response.status_code)
 
+class UserBehavior(TaskSet):
+    min_wait = 100
+    max_wait = 5000
+
+    def on_start(self):
+        self.index()
+
+    def index(self):
+        self.client.get("/")
+        statsd.incr('index')
+
+    @task(10)
+    def packages(self):
+        with statsd.timer('request_time'):
+            response = self.client.get("/packages")
+            statsd.incr('requests_%s' % response.status_code)
         statsd.incr('requests')
 
+    @task(10)
+    def download(self):
+        with statsd.timer('request_time'):
+            response = self.client.get("/download")
+            statsd.incr('requests_%s' % response.status_code)
+        statsd.incr('requests')
+
+    # @task(1)
+    # def stop(self):
+    #     self.interrupt()
+
+
 class WebsiteUser(HttpLocust):
+    host = "http://archlinux.org"
     task_set = UserBehavior
-    min_wait=800
-    max_wait=900
+    min_wait = 500
+    max_wait = 1000
